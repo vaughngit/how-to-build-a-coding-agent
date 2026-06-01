@@ -22,7 +22,7 @@ By the end of this workshop, you’ll understand how to:
 
 ## 🛠️ What We're Building
 
-You’ll build 6 versions of a coding assistant. 
+You’ll build 6 versions of a coding assistant.
 
 Each version adds more features:
 
@@ -42,7 +42,7 @@ graph LR
         D --> E[edit_tool.go<br/>+ File Editing]
         E --> F[code_search_tool.go<br/>+ Code Search]
     end
-    
+
     subgraph "Tool Capabilities"
         G[No Tools] --> H[read_file]
         H --> I[read_file<br/>list_files]
@@ -50,7 +50,7 @@ graph LR
         J --> K[read_file<br/>list_files<br/>bash<br/>edit_file]
         K --> L[read_file<br/>list_files<br/>bash<br/>code_search]
     end
-    
+
     A -.-> G
     B -.-> H
     C -.-> I
@@ -86,7 +86,7 @@ graph TB
         A --> D[getUserMessage Function]
         A --> E[Verbose Logging]
     end
-    
+
     subgraph "Shared Event Loop"
         F[Start Chat Session] --> G[Get User Input]
         G --> H{Empty Input?}
@@ -102,7 +102,7 @@ graph TB
         P --> J
         M --> G
     end
-    
+
     subgraph "Tool Execution Loop"
         N --> Q[Find Tool by Name]
         Q --> R[Execute Tool Function]
@@ -137,6 +137,15 @@ devenv shell  # Loads everything you need
 # Make sure Go is installed
 go mod tidy
 ```
+
+**Enable the commit guards (recommended).** This repo ships [pre-commit](https://pre-commit.com) hooks that scan for leaked secrets and block your local config from being committed:
+
+```bash
+pip install pre-commit   # or: brew install pre-commit
+pre-commit install       # enable the hooks in your clone
+```
+
+See [Secrets & config hygiene](#-secrets--config-hygiene) for what they do.
 
 ### 🔐 Configure AWS Bedrock Access
 
@@ -194,6 +203,19 @@ aws bedrock list-inference-profiles --region us-east-1 \
 export BEDROCK_MODEL="us.anthropic.claude-opus-4-8"
 go run chat.go -model us.anthropic.claude-opus-4-8
 ```
+
+---
+
+## 🔒 Secrets & config hygiene
+
+This project is designed so a leak is hard in the first place, with layers of defense:
+
+1. **No secrets in the repo by design.** `bedrock.json` holds only a profile *name*, region, and model ID — never credentials. Your real AWS secrets (SSO tokens, access keys) live in `~/.aws/` and are read through the standard AWS credential chain. The profile name is just a pointer into `~/.aws/config`.
+2. **Template committed, real file ignored.** Commit-safe `bedrock.json.example` is tracked; your `bedrock.json` is in `.gitignore`.
+3. **Local commit guard.** [pre-commit](https://pre-commit.com) hooks ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) run [gitleaks](https://github.com/gitleaks/gitleaks) to scan every commit for secrets, and a `forbid-bedrock-json` hook hard-blocks `bedrock.json` even if `.gitignore` is bypassed with `git add -f`. Enable with `pre-commit install`.
+4. **CI enforcement.** Local hooks can be skipped (`git commit --no-verify`), so [`.github/workflows/secret-scan.yml`](.github/workflows/secret-scan.yml) re-runs gitleaks on every push and pull request — the layer that can't be bypassed.
+
+> Rule of thumb: never `git add -f bedrock.json`, and if you reuse this config pattern in another repo, carry the `.gitignore` line and the hooks with it.
 
 ---
 
