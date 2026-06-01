@@ -142,36 +142,58 @@ go mod tidy
 
 This workshop talks to Claude through **Amazon Bedrock** (not the direct Anthropic API), authenticating with your standard AWS credentials — no `ANTHROPIC_API_KEY` required.
 
-**Using an SSO profile (recommended):**
+#### Option A: A config file (no env vars to export) — recommended
+
+Copy the example and fill in your profile, region, and model:
 
 ```bash
-aws sso login --profile your-profile   # refresh your session
-export AWS_PROFILE=your-profile
-export AWS_REGION=us-east-1
+cp bedrock.json.example bedrock.json
 ```
 
-**Or using static access keys:**
+```json
+{
+  "aws_profile": "your-sso-profile",
+  "aws_region": "us-east-1",
+  "model": "us.anthropic.claude-opus-4-6-v1"
+}
+```
+
+Each program reads `./bedrock.json` automatically on startup — so you can just `aws sso login --profile your-sso-profile` once and run. `bedrock.json` is git-ignored, so your settings stay local. Point at a different file with the `-config` flag or `BEDROCK_CONFIG` env var:
 
 ```bash
+go run chat.go -config ~/.config/bedrock.json
+```
+
+#### Option B: Environment variables
+
+Any of these override the matching value in `bedrock.json`, so they're handy for one-off runs:
+
+```bash
+# SSO profile (recommended)
+aws sso login --profile your-profile
+export AWS_PROFILE=your-profile
+export AWS_REGION=us-east-1
+
+# ...or static access keys
 export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 export AWS_REGION=us-east-1
 ```
 
-**Pick your model (optional).** Each program defaults to the `us-east-1` Claude Opus 4.6 inference profile (`us.anthropic.claude-opus-4-6-v1`). Override it with an environment variable:
+#### Picking your model
 
-```bash
-export BEDROCK_MODEL="us.anthropic.claude-opus-4-8"
-```
-
-List the inference-profile IDs available to your account with:
+Settings resolve in this order: **`-model` flag** (chat.go only) → **`BEDROCK_MODEL` env** → **`bedrock.json`** → built-in default (`us.anthropic.claude-opus-4-6-v1`). List the inference-profile IDs available to your account with:
 
 ```bash
 aws bedrock list-inference-profiles --region us-east-1 \
   --query "inferenceProfileSummaries[].inferenceProfileId" --output text
 ```
 
-> 💡 `chat.go` also accepts a `-model` flag, e.g. `go run chat.go -model us.anthropic.claude-opus-4-8`
+```bash
+# examples
+export BEDROCK_MODEL="us.anthropic.claude-opus-4-8"
+go run chat.go -model us.anthropic.claude-opus-4-8
+```
 
 ---
 

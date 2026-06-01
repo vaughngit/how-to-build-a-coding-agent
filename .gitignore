@@ -17,5 +17,8 @@ list_files
 read
 read_verbose
 
+# Local Bedrock config (copy bedrock.json.example -> bedrock.json)
+bedrock.json
+
 # demo files
 fizzbuzz.js

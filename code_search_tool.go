@@ -25,15 +25,72 @@ import (
 //	  --query "inferenceProfileSummaries[].inferenceProfileId"
 const defaultBedrockModel = "us.anthropic.claude-opus-4-6-v1"
 
-func bedrockModel() anthropic.Model {
-	if m := os.Getenv("BEDROCK_MODEL"); m != "" {
-		return anthropic.Model(m)
+// bedrockModelID is the resolved inference-profile ID, set in main().
+var bedrockModelID anthropic.Model
+
+// bedrockConfig holds optional settings loaded from a JSON config file so you
+// don't have to export environment variables. The default path is ./bedrock.json
+// (override with -config or the BEDROCK_CONFIG env var). Matching env vars
+// (AWS_PROFILE, AWS_REGION, BEDROCK_MODEL) still take precedence when set.
+type bedrockConfig struct {
+	Profile string `json:"aws_profile"`
+	Region  string `json:"aws_region"`
+	Model   string `json:"model"`
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
 	}
-	return anthropic.Model(defaultBedrockModel)
+	return ""
+}
+
+// resolveBedrockSettings merges the optional config file with environment
+// variables (env wins) and returns the AWS profile, region, and model to use.
+func resolveBedrockSettings(path string) (profile, region, model string) {
+	if path == "" {
+		path = "bedrock.json"
+	}
+	var c bedrockConfig
+	if data, err := os.ReadFile(path); err == nil {
+		if jsonErr := json.Unmarshal(data, &c); jsonErr != nil {
+			log.Fatalf("failed to parse %s: %v", path, jsonErr)
+		}
+	}
+	profile = firstNonEmpty(os.Getenv("AWS_PROFILE"), c.Profile)
+	region = firstNonEmpty(os.Getenv("AWS_REGION"), c.Region)
+	model = firstNonEmpty(os.Getenv("BEDROCK_MODEL"), c.Model, defaultBedrockModel)
+	return
+}
+
+// newBedrockClient builds an Anthropic client routed through Amazon Bedrock,
+// using the resolved profile/region and the standard AWS credential chain
+// (SSO profiles, static access keys, or instance roles). No ANTHROPIC_API_KEY.
+func newBedrockClient(ctx context.Context, profile, region string) anthropic.Client {
+	var opts []func(*config.LoadOptions) error
+	if region != "" {
+		opts = append(opts, config.WithRegion(region))
+	}
+	if profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(profile))
+	}
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		log.Fatalf("failed to load AWS config: %v", err)
+	}
+	// With AWS SSO, LoadDefaultConfig sets a bearer-token provider for the SSO
+	// OIDC token; the Bedrock helper would prefer it over SigV4 and send it as a
+	// Bedrock API key (403 "Invalid API Key format"). Clear it to force SigV4.
+	// A real Bedrock API key in AWS_BEARER_TOKEN_BEDROCK is still honored.
+	cfg.BearerAuthTokenProvider = nil
+	return anthropic.NewClient(bedrock.WithConfig(cfg))
 }
 
 func main() {
 	verbose := flag.Bool("verbose", false, "enable verbose logging")
+	configPath := flag.String("config", os.Getenv("BEDROCK_CONFIG"), "path to a Bedrock JSON config file (default ./bedrock.json)")
 	flag.Parse()
 
 	if *verbose {
@@ -48,21 +105,13 @@ func main() {
 
 	ctx := context.Background()
 
-	// Route through Amazon Bedrock using the standard AWS credential chain
-	// (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION, profiles, SSO,
-	// or instance roles). No ANTHROPIC_API_KEY is used.
-	cfg, cfgErr := config.LoadDefaultConfig(ctx)
-	if cfgErr != nil {
-		log.Fatalf("failed to load AWS config: %v", cfgErr)
-	}
-	// With AWS SSO, LoadDefaultConfig sets a bearer-token provider for the SSO
-	// OIDC token; the Bedrock helper would prefer it over SigV4 and send it as a
-	// Bedrock API key (403 "Invalid API Key format"). Clear it to force SigV4.
-	// A real Bedrock API key in AWS_BEARER_TOKEN_BEDROCK is still honored.
-	cfg.BearerAuthTokenProvider = nil
-	client := anthropic.NewClient(bedrock.WithConfig(cfg))
+	// Resolve AWS profile / region / model from an optional config file so they
+	// don't have to be exported; matching environment variables still win.
+	profile, region, model := resolveBedrockSettings(*configPath)
+	bedrockModelID = anthropic.Model(model)
+	client := newBedrockClient(ctx, profile, region)
 	if *verbose {
-		log.Println("Anthropic (Bedrock) client initialized")
+		log.Printf("Anthropic (Bedrock) client initialized (profile=%q region=%q model=%s)", profile, region, bedrockModelID)
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -262,11 +311,11 @@ func (a *Agent) runInference(ctx context.Context, conversation []anthropic.Messa
 	}
 
 	if a.verbose {
-		log.Printf("Making API call to Claude with model: %s and %d tools", bedrockModel(), len(anthropicTools))
+		log.Printf("Making API call to Claude with model: %s and %d tools", bedrockModelID, len(anthropicTools))
 	}
 
 	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     bedrockModel(),
+		Model:     bedrockModelID,
 		MaxTokens: int64(1024),
 		Messages:  conversation,
 		Tools:     anthropicTools,
