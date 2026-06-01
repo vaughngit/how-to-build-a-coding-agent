@@ -13,8 +13,25 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/invopop/jsonschema"
 )
+
+// defaultBedrockModel is a known-real us-east-1 inference-profile ID used when
+// BEDROCK_MODEL is unset. Override it to point at the exact Claude model you've
+// enabled (e.g. Opus 4.6). List available IDs with:
+//
+//	aws bedrock list-inference-profiles --region us-east-1 \
+//	  --query "inferenceProfileSummaries[].inferenceProfileId"
+const defaultBedrockModel = "us.anthropic.claude-opus-4-6-v1"
+
+func bedrockModel() anthropic.Model {
+	if m := os.Getenv("BEDROCK_MODEL"); m != "" {
+		return anthropic.Model(m)
+	}
+	return anthropic.Model(defaultBedrockModel)
+}
 
 func main() {
 	verbose := flag.Bool("verbose", false, "enable verbose logging")
@@ -30,9 +47,23 @@ func main() {
 		log.SetPrefix("")
 	}
 
-	client := anthropic.NewClient()
+	ctx := context.Background()
+
+	// Route through Amazon Bedrock using the standard AWS credential chain
+	// (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION, profiles, SSO,
+	// or instance roles). No ANTHROPIC_API_KEY is used.
+	cfg, cfgErr := config.LoadDefaultConfig(ctx)
+	if cfgErr != nil {
+		log.Fatalf("failed to load AWS config: %v", cfgErr)
+	}
+	// With AWS SSO, LoadDefaultConfig sets a bearer-token provider for the SSO
+	// OIDC token; the Bedrock helper would prefer it over SigV4 and send it as a
+	// Bedrock API key (403 "Invalid API Key format"). Clear it to force SigV4.
+	// A real Bedrock API key in AWS_BEARER_TOKEN_BEDROCK is still honored.
+	cfg.BearerAuthTokenProvider = nil
+	client := anthropic.NewClient(bedrock.WithConfig(cfg))
 	if *verbose {
-		log.Println("Anthropic client initialized")
+		log.Println("Anthropic (Bedrock) client initialized")
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -48,7 +79,7 @@ func main() {
 		log.Printf("Initialized %d tools", len(tools))
 	}
 	agent := NewAgent(&client, getUserMessage, tools, *verbose)
-	err := agent.Run(context.TODO())
+	err := agent.Run(ctx)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
 	}
@@ -232,11 +263,11 @@ func (a *Agent) runInference(ctx context.Context, conversation []anthropic.Messa
 	}
 
 	if a.verbose {
-		log.Printf("Making API call to Claude with model: %s and %d tools", anthropic.ModelClaudeOpus4_6, len(anthropicTools))
+		log.Printf("Making API call to Claude with model: %s and %d tools", bedrockModel(), len(anthropicTools))
 	}
 
 	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeOpus4_6,
+		Model:     bedrockModel(),
 		MaxTokens: int64(1024),
 		Messages:  conversation,
 		Tools:     anthropicTools,

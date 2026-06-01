@@ -12,7 +12,7 @@ You don’t need to be an AI expert. Just follow along and build step-by-step!
 
 By the end of this workshop, you’ll understand how to:
 
-- ✅ Connect to the Anthropic Claude API
+- ✅ Connect to Claude via Amazon Bedrock
 - ✅ Build a simple AI chatbot
 - ✅ Add tools like reading files, editing code, and running commands
 - ✅ Handle tool requests and errors
@@ -119,7 +119,9 @@ graph TB
 ### ✅ Prerequisites
 
 * Go 1.24.2+ or [devenv](https://devenv.sh/) (recommended for easy setup)
-* An [Anthropic API Key](https://www.anthropic.com/product/claude)
+* An **AWS account** with [Amazon Bedrock](https://aws.amazon.com/bedrock/) access, and a Claude model enabled in the [Bedrock console](https://console.aws.amazon.com/bedrock/) (e.g. Claude Opus 4.6) for your region
+* AWS credentials on your machine — either an **SSO profile** (`aws sso login`) or **access keys** (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`)
+* The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (handy for SSO login and listing available models)
 
 ### 🔧 Set Up Your Environment
 
@@ -136,11 +138,40 @@ devenv shell  # Loads everything you need
 go mod tidy
 ```
 
-### 🔐 Add Your API Key
+### 🔐 Configure AWS Bedrock Access
+
+This workshop talks to Claude through **Amazon Bedrock** (not the direct Anthropic API), authenticating with your standard AWS credentials — no `ANTHROPIC_API_KEY` required.
+
+**Using an SSO profile (recommended):**
 
 ```bash
-export ANTHROPIC_API_KEY="your-api-key-here"
+aws sso login --profile your-profile   # refresh your session
+export AWS_PROFILE=your-profile
+export AWS_REGION=us-east-1
 ```
+
+**Or using static access keys:**
+
+```bash
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_REGION=us-east-1
+```
+
+**Pick your model (optional).** Each program defaults to the `us-east-1` Claude Opus 4.6 inference profile (`us.anthropic.claude-opus-4-6-v1`). Override it with an environment variable:
+
+```bash
+export BEDROCK_MODEL="us.anthropic.claude-opus-4-8"
+```
+
+List the inference-profile IDs available to your account with:
+
+```bash
+aws bedrock list-inference-profiles --region us-east-1 \
+  --query "inferenceProfileSummaries[].inferenceProfileId" --output text
+```
+
+> 💡 `chat.go` also accepts a `-model` flag, e.g. `go run chat.go -model us.anthropic.claude-opus-4-8`
 
 ---
 
@@ -235,10 +266,12 @@ go run code_search_tool.go
 
 ## 🐞 Troubleshooting
 
-**API key not working?**
+**Auth / 403 errors?**
 
-* Make sure it’s exported: `echo $ANTHROPIC_API_KEY`
-* Check your quota on [Anthropic’s dashboard](https://www.anthropic.com)
+* Confirm your credentials resolve: `aws sts get-caller-identity`
+* Using SSO and seeing `403 ... Invalid API Key format` or an expired-token error? Refresh your session: `aws sso login --profile your-profile`
+* Make sure the Claude model is **enabled** for your account in the [Bedrock console](https://console.aws.amazon.com/bedrock/) for the region in `AWS_REGION`
+* Make sure `AWS_REGION` matches your `BEDROCK_MODEL` prefix (e.g. `us.` → `us-east-1`)
 
 **Go errors?**
 

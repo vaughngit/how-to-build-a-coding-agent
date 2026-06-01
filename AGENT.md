@@ -64,11 +64,11 @@ go run edit_tool.go --verbose
 - **Performance issues**: See API call timing and response sizes
 
 ### Environment Issues
-- Ensure `ANTHROPIC_API_KEY` environment variable is set
+- Ensure AWS credentials are configured for Amazon Bedrock (`AWS_PROFILE` + `aws sso login`, or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`) and `AWS_REGION` is set
 - Run `devenv shell` to ensure proper development environment
 - Use `go mod tidy` to ensure dependencies are installed
 
 ## Notes
-- Requires ANTHROPIC_API_KEY environment variable to be set
+- Requires AWS credentials with Amazon Bedrock access (and a Claude model enabled in the Bedrock console); optionally set `BEDROCK_MODEL` to override the default model
 - Chat application provides a simple terminal interface to Claude
 - Use ctrl-c to quit the chat session
