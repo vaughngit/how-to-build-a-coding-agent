@@ -167,7 +167,14 @@ cp bedrock.json.example bedrock.json
 }
 ```
 
-Each program reads `./bedrock.json` automatically on startup — so you can just `aws sso login --profile your-sso-profile` once and run. `bedrock.json` is git-ignored, so your settings stay local. To keep the file outside the repo, point at one you've created with the `-config` flag or `BEDROCK_CONFIG` env var (if the path doesn't exist, the program exits with a clear error rather than silently falling back):
+With `bedrock.json` in the repo root, **just run the program — no flags needed.** Each one reads `./bedrock.json` automatically on startup, so a one-time SSO login is all the setup:
+
+```bash
+aws sso login --profile your-sso-profile   # once per session
+go run chat.go                             # no -config flag required
+```
+
+`bedrock.json` is git-ignored, so your settings stay local. To keep the file outside the repo instead, point at one you've created with the `-config` flag or `BEDROCK_CONFIG` env var (if the path doesn't exist, the program exits with a clear error rather than silently falling back):
 
 ```bash
 cp bedrock.json.example ~/.config/bedrock.json   # create it first
