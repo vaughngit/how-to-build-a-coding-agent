@@ -49,15 +49,21 @@ func firstNonEmpty(vals ...string) string {
 
 // resolveBedrockSettings merges the optional config file with environment
 // variables (env wins) and returns the AWS profile, region, and model to use.
+// A path requested explicitly via -config or BEDROCK_CONFIG that cannot be read
+// is a fatal error; the default ./bedrock.json is silently skipped when absent.
 func resolveBedrockSettings(path string) (profile, region, model string) {
+	explicit := path != ""
 	if path == "" {
 		path = "bedrock.json"
 	}
 	var c bedrockConfig
-	if data, err := os.ReadFile(path); err == nil {
+	switch data, err := os.ReadFile(path); {
+	case err == nil:
 		if jsonErr := json.Unmarshal(data, &c); jsonErr != nil {
 			log.Fatalf("failed to parse %s: %v", path, jsonErr)
 		}
+	case explicit:
+		log.Fatalf("config file %q could not be read: %v", path, err)
 	}
 	profile = firstNonEmpty(os.Getenv("AWS_PROFILE"), c.Profile)
 	region = firstNonEmpty(os.Getenv("AWS_REGION"), c.Region)
