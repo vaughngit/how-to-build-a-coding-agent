@@ -16,3 +16,8 @@ read_verbose
 
 # Local Bedrock config (copy bedrock.json.example -> bedrock.json)
 bedrock.json
+
+# Local tutorial scratch work
+.DS_Store
+tutorial/**/.DS_Store
+tutorial/workbench/
